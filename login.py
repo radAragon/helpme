@@ -1,8 +1,12 @@
+# -*- coding: utf-8 -*-
+
 import base64
 import json
-import Crypto
 import urllib2
-from Crypto.Hash import SHA256
+import rsa
+import boto3
+# Get the service resource
+dynamodb = boto3.resource('dynamodb')
 
 
 def handler(event, context):
@@ -18,14 +22,16 @@ def handler(event, context):
     print('Header: %s' % json.dumps(header, indent=4))
     print('Payload: %s' % json.dumps(payload, indent=4))
 
-    cert = getGoogleCertificates(header[u'kid'])
-
+    #cert = getGoogleCertificates(header[u'kid'])
     dataToSign = '.'.join([segments[0], segments[1]])
     sig = segments[2]
-    hash = SHA256.new()
-    hash.update(dataToSign)
 
-    return 'SUCCESS'
+    # Verifica assinatura com chave obtida
+    #isVerified = rsa.verify(dataToSign, sig, cert)
+
+    user = getUser(payload)
+
+    return user
 
 
 def base64padding(u64string):
@@ -47,10 +53,34 @@ def getGoogleCertificates(kid):
         raise Exception('INTERNAL SERVER ERROR. Nao foi possivel obter Google certificados')
 
     if kid not in cert_dic:
-        raise Exception('UNAUTHORIZED. Certificado nao encontrado')
+        print('Erro: certificado nao encontrado em %s' % (cert_dic.keys))
+        #raise Exception('UNAUTHORIZED. Certificado nao encontrado')
     print(kid +': '+ cert_dic[kid])
 
     return cert_dic[kid]
+
+
+def getUser(userData):
+    print('Buscando usuário')
+    table = dynamodb.Table('Users')
+    response = table.get_item(Key={'googlesub': userData['sub']})
+    print(response)
+
+    if u'Item' in response:
+        item = response[u'Item']
+        print('User identificado: %s', item)
+
+    else:
+        print('Criando novo usuario')
+        item = {
+            'googlesub': userData['sub'],
+            'nativeLanguages': [userData['locale']],
+            'altLanguages': [],
+            'subLanguages': []
+        }
+        table.put_item(Item=item)
+
+    return item
 
 
 if __name__ == '__main__':
